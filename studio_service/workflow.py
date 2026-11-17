@@ -60,7 +60,9 @@ def planning(data):
     direction = (ROOT / "skills" / (stage["skill"] + ".md")).read_text(encoding="utf-8")
     reviewer = (ROOT / "skills/meta/reviewer.md").read_text(encoding="utf-8")
     return envelope({"stage": stage["name"], "produces": stage["produces"],
-        "system": direction + "\n" + reviewer + "\nReturn one JSON object containing the named artifacts. "
+        "system": direction + "\n" + reviewer + "\nYou are executing ONLY the " + stage["name"] + " stage. "
+        "Return one JSON object whose top-level artifact keys are exactly: " + ", ".join(stage["produces"]) + ". "
+        "Each artifact must satisfy its supplied JSON schema. Do not substitute a chat reply or later-stage output. "
         "Use supplied verified facts and media only. Do not claim to browse, inspect files, or run tools. "
         "The user delegated creative choices. Develop a hook, tension, meaningful progression, payoff and branded invitation. "
         "Choose the strongest feasible idea yourself. This hybrid production uses Remotion and approved media. "
