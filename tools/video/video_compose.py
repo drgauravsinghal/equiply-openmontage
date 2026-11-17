@@ -2159,6 +2159,8 @@ class VideoCompose(BaseTool):
                 except (TypeError, ValueError):
                     pass
 
+            if composition_data.get("metadata", {}).get("studio_hybrid"):
+                cmd.extend(["--offthreadvideo-cache-size-in-bytes=33554432", "--media-cache-size-in-bytes=33554432", "--offthreadvideo-video-threads=1"])
             remotion_timeout_ms = inputs.get("remotion_timeout_ms")
             scene_count = len(props.get("scenes") or props.get("cuts") or [])
             subprocess_timeout = max(600, scene_count * 15)

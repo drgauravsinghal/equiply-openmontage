@@ -216,6 +216,7 @@ def execute(run_id):
         edit = {"version": "1.0", "render_runtime": "remotion", "renderer_family": "animation-first",
                 "composition_mode": "templated", "cuts": cuts,
                 "metadata": {"proposal_render_runtime": "remotion", "studio_hybrid": True,
+                             "delivery_promise": data["story"].get("production", {}).get("deliveryPromise"),
                              "duration_seconds": data["duration"], "target_duration_seconds": data["duration"], "brand": data["brand"], "website": data.get("website", ""),
                              "color": data.get("color", "#6246ea"), "width": data["width"], "height": data["height"],
                              "beats": [{**b, "source": paths.get(b.get("assetId"), ""),
@@ -232,6 +233,7 @@ def execute(run_id):
         progress("Rendering the story with OpenMontage and Remotion")
         output = directory / "renders/final.mp4"
         rendered = VideoCompose().execute({"operation": "render", "edit_decisions": edit, "asset_manifest": manifest,
+            "scene_plan": artifacts["scene_plan"]["scenes"],
             "output_path": str(output), "audio_path": audio_path, "remotion_concurrency": 1,
             "remotion_browser_executable": os.environ.get("CHROME_PATH", "/usr/bin/chromium"), "remotion_timeout_ms": 120000})
         if not rendered.success:
