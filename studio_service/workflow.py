@@ -73,9 +73,18 @@ def planning(data):
 
 
 def capabilities(data):
-    from tools.tool_registry import registry
-    registry.discover()
-    return envelope({"capabilities": registry.provider_menu_summary()})
+    # This worker executes the approved hybrid edit. Generation providers live
+    # in Studio; scanning every optional upstream provider can block readiness
+    # on unrelated CLI/network probes and must not gate this renderer.
+    from tools.video.video_compose import VideoCompose
+    renderer = VideoCompose()
+    return envelope({"capabilities": {
+        "composition_runtimes": {"ffmpeg": renderer._ffmpeg_available(),
+                                 "remotion": renderer._remotion_available(),
+                                 "hyperframes": False},
+        "execution_tools": ["audio_mixer", "video_compose"],
+        "media_generation": "host_managed",
+        "composition_mode": "templated"}})
 
 
 def create(data):
