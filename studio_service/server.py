@@ -9,6 +9,7 @@ import hmac
 import json
 import os
 import threading
+import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -115,6 +116,13 @@ class Handler(BaseHTTPRequestHandler):
         # Never log request bodies, credentials or business reference material.
         pass
 
+    def log_failure(self, error):
+        # Log code locations and exception type, never request data or secrets.
+        frames = traceback.extract_tb(error.__traceback__)
+        print(json.dumps({"event": "production_error", "route": self.path,
+                          "type": type(error).__name__,
+                          "locations": [f"{Path(f.filename).name}:{f.lineno}:{f.name}" for f in frames]}), flush=True)
+
     def reply(self, status, result):
         body = json.dumps(result, allow_nan=False).encode()
         self.send_response(status)
@@ -172,6 +180,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         token = os.environ["STUDIO_SERVICE_TOKEN"]
         if not hmac.compare_digest(self.headers.get("Authorization", ""), "Bearer " + token):
+            print(json.dumps({"event": "production_auth_rejected", "route": self.path}), flush=True)
             return self.reply(401, {"error": "Unauthorized"})
         fn = ROUTES.get(self.path)
         if not fn:
@@ -193,7 +202,8 @@ class Handler(BaseHTTPRequestHandler):
                                     "rule": error.validator})
         except (ValueError, KeyError, TypeError) as error:
             return self.reply(422, {"error": str(error)[:1000]})
-        except Exception:
+        except Exception as error:
+            self.log_failure(error)
             return self.reply(500, {"error": "Production contract unavailable"})
 
 
@@ -205,6 +215,13 @@ def main():
     # Fail readiness before accepting traffic if the pinned source is incomplete.
     for pipeline in PIPELINES:
         load_pipeline_readonly(pipeline)
+    try:
+        workflow.capabilities({})
+        print('Production capability discovery ready', flush=True)
+    except Exception as error:
+        frames = traceback.extract_tb(error.__traceback__)
+        print(json.dumps({"event": "production_preflight_error", "type": type(error).__name__,
+                          "locations": [f"{Path(f.filename).name}:{f.lineno}:{f.name}" for f in frames]}), flush=True)
     threading.Thread(target=workflow.cleanup_loop, daemon=True).start()
     ThreadingHTTPServer(("0.0.0.0", int(os.environ.get("PORT", "10000"))), Handler).serve_forever()
 
