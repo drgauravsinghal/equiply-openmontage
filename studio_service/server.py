@@ -78,9 +78,17 @@ def story_artifacts(data):
     scene_plan = {"version": "1.0", "scenes": scenes}
     validate_artifact("script", script)
     validate_artifact("scene_plan", scene_plan)
-    return {"engine": "OpenMontage", "upstreamRevision": REVISION,
+    promise_data = data.get("promise")
+    promise_check = None
+    if promise_data:
+        promise_check = DeliveryPromise.from_dict(promise_data).validate_cuts(data.get("cuts", []))
+        if not promise_check["valid"]:
+            return {"engine": "OpenMontage", "upstreamRevision": REVISION,
+                    "valid": False, "issues": promise_check["violations"]}
+    return {"engine": "OpenMontage", "upstreamRevision": REVISION, "valid": True,
             "artifacts": {"script": script, "scene_plan": scene_plan},
-            "status": "planned", "reviewedExport": False}
+            "status": "planned", "deliveryPromise": promise_data,
+            "promiseCheck": promise_check, "reviewedExport": False}
 
 
 def delivery(data):
