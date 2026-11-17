@@ -1,4 +1,5 @@
 import { Composition, CalculateMetadataFunction } from "remotion";
+import { StudioHybridComposition } from './StudioHybrid';
 import { Explainer, ExplainerProps } from "./Explainer";
 import {
   CinematicRenderer,
@@ -136,6 +137,7 @@ const calculateMetadata: CalculateMetadataFunction<ExplainerProps> = async ({
 export const Root: React.FC = () => {
   return (
     <>
+      <StudioHybridComposition />
       <Composition
         id="Explainer"
         component={Explainer}

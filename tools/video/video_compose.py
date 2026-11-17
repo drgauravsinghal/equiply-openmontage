@@ -1712,7 +1712,7 @@ class VideoCompose(BaseTool):
                 profile=profile,
             )
         # --- Explicit Remotion path (render_runtime == 'remotion') ---
-        if self._needs_remotion(resolved_cuts):
+        if edit_decisions.get("metadata", {}).get("studio_hybrid") or self._needs_remotion(resolved_cuts):
             remotion_inputs: dict[str, Any] = {
                 "edit_decisions": dict(edit_decisions, cuts=resolved_cuts),
                 "output_path": str(output_path),
@@ -2017,6 +2017,8 @@ class VideoCompose(BaseTool):
 
         renderer_family = composition_data.get("renderer_family", "explainer-data")
         composition_id = self._get_composition_id(renderer_family)
+        if composition_data.get("metadata", {}).get("studio_hybrid"):
+            composition_id = "StudioHybrid"
         if composition_id == "CinematicRenderer" and composition_data.get("overlays"):
             return ToolResult(
                 success=False,

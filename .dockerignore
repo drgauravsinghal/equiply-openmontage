@@ -1,0 +1,8 @@
+.git
+node_modules
+**/node_modules
+projects
+**/__pycache__
+.env
+*.bundle
+*.zip

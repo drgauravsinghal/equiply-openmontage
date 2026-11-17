@@ -8,6 +8,7 @@ from __future__ import annotations
 import hmac
 import json
 import os
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from jsonschema import ValidationError
 from lib.delivery_promise import DeliveryPromise
 from lib.pipeline_loader import load_pipeline_readonly
 from schemas.artifacts import ARTIFACT_NAMES, load_schema, validate_artifact
+from studio_service import workflow
 
 ROOT = Path(__file__).resolve().parent.parent
 REVISION = "2e003e65fa99a0f329478a2c1cdcf26bc481933a"
@@ -100,7 +102,10 @@ def delivery(data):
 
 
 ROUTES = {"/v1/stage": stage_contract, "/v1/artifacts/validate": validate,
-          "/v1/story/artifacts": story_artifacts, "/v1/delivery/validate": delivery}
+          "/v1/story/artifacts": story_artifacts, "/v1/delivery/validate": delivery,
+          "/v2/planning": workflow.planning, "/v2/capabilities": workflow.capabilities, "/v2/runs/create": workflow.create,
+          "/v2/runs/start": workflow.start, "/v2/runs/status": workflow.status,
+          "/v2/runs/delete": workflow.remove}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -121,13 +126,48 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
+        if self.path.startswith("/v2/runs/"):
+            if not hmac.compare_digest(self.headers.get("Authorization", ""), "Bearer " + os.environ["STUDIO_SERVICE_TOKEN"]):
+                return self.reply(401, {"error": "Unauthorized"})
+            try:
+                parts = self.path.split("/")
+                if len(parts) != 5 or parts[4] != "video":
+                    raise ValueError("Unknown export")
+                if workflow.status({"runId": parts[3]})["state"] != "complete":
+                    return self.reply(409, {"error": "Export not ready"})
+                path = workflow.run_dir(parts[3]) / "renders/final.mp4"
+                self.send_response(200)
+                self.send_header("Content-Type", "video/mp4")
+                self.send_header("Content-Length", str(path.stat().st_size))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                with path.open("rb") as source:
+                    while chunk := source.read(65536):
+                        self.wfile.write(chunk)
+                return
+            except (ValueError, OSError):
+                return self.reply(404, {"error": "Export unavailable"})
         if self.path == "/healthz":
-            return self.reply(200, {"status": "ok", "engine": "OpenMontage", "upstreamRevision": REVISION})
+            return self.reply(200, {"status": "ok", "engine": "OpenMontage", "upstreamRevision": REVISION,
+                                    "executionVersion": 2})
         if self.path in ("/", "/source"):
             return self.reply(200, {"license": "AGPL-3.0", "source": os.environ["SOURCE_URL"],
                                     "upstream": "https://github.com/OpenMontageInc/OpenMontage",
                                     "upstreamRevision": REVISION})
         self.reply(404, {"error": "Not found"})
+
+    def do_PUT(self):
+        if not hmac.compare_digest(self.headers.get("Authorization", ""), "Bearer " + os.environ["STUDIO_SERVICE_TOKEN"]):
+            return self.reply(401, {"error": "Unauthorized"})
+        try:
+            parts = self.path.split("/")
+            if len(parts) != 6 or parts[1:3] != ["v2", "runs"] or parts[4] != "assets":
+                raise ValueError("Unknown upload")
+            self.connection.settimeout(120)
+            result = workflow.upload(parts[3], parts[5], self.rfile, int(self.headers.get("Content-Length", "0")))
+            return self.reply(200, result)
+        except (ValueError, KeyError, OSError):
+            return self.reply(422, {"error": "Asset upload failed"})
 
     def do_POST(self):
         token = os.environ["STUDIO_SERVICE_TOKEN"]
@@ -151,8 +191,8 @@ class Handler(BaseHTTPRequestHandler):
         except ValidationError as error:
             return self.reply(422, {"error": "Artifact validation failed", "path": list(error.absolute_path),
                                     "rule": error.validator})
-        except (ValueError, KeyError, TypeError):
-            return self.reply(422, {"error": "Invalid production request"})
+        except (ValueError, KeyError, TypeError) as error:
+            return self.reply(422, {"error": str(error)[:1000]})
         except Exception:
             return self.reply(500, {"error": "Production contract unavailable"})
 
@@ -165,6 +205,7 @@ def main():
     # Fail readiness before accepting traffic if the pinned source is incomplete.
     for pipeline in PIPELINES:
         load_pipeline_readonly(pipeline)
+    threading.Thread(target=workflow.cleanup_loop, daemon=True).start()
     ThreadingHTTPServer(("0.0.0.0", int(os.environ.get("PORT", "10000"))), Handler).serve_forever()
 
 
